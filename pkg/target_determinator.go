@@ -605,10 +605,12 @@ func clearAnalysisCache(context *Context) error {
 
 			result, err := context.BazelCmd.Execute(
 				BazelCmdConfig{Dir: context.WorkspacePath, Stderr: &stderr},
-				[]string{"--output_base", context.BazelOutputBase}, "build", "--discard_analysis_cache")
+				[]string{"--output_base", context.BazelOutputBase}, "build", "--discard_analysis_cache", "--keep_going")
 
-			if result != 0 || err != nil {
-				return fmt.Errorf("failed to discard Bazel analysis cache in %v: %w. Stderr from Bazel ↓↓\n%v", context.WorkspacePath, err, stderr.String())
+			if result > 1 || err != nil {
+				if err.Error() != "exit status 1" {
+					return fmt.Errorf("failed to discard Bazel analysis cache in %v: %w. Stderr from Bazel ↓↓\n%v", context.WorkspacePath, err, stderr.String())
+				}
 			}
 		}
 
@@ -619,11 +621,13 @@ func clearAnalysisCache(context *Context) error {
 
 			result, err := context.BazelCmd.Execute(
 				BazelCmdConfig{Dir: context.WorkspacePath, Stderr: &stderr},
-				[]string{"--output_base", context.BazelOutputBase}, "build")
+				[]string{"--output_base", context.BazelOutputBase}, "build", "--keep_going")
 
-			if result != 0 || err != nil {
-				return fmt.Errorf("failed to run no-op build after discarding Bazel analysis cache in %v: %w. Stderr:\n%v",
-					context.WorkspacePath, err, stderr.String())
+			if result > 1 || err != nil {
+				if err.Error() != "exit status 1" {
+					return fmt.Errorf("failed to run no-op build after discarding Bazel analysis cache in %v: %w. Stderr:\n%v",
+						context.WorkspacePath, err, stderr.String())
+				}
 			}
 		}
 		return nil
@@ -770,7 +774,7 @@ func runToCqueryResult(context *Context, pattern string, includeTransitions bool
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	args := []string{"--output=proto"}
+	args := []string{"--output=proto", "--keep_going"}
 	if includeTransitions {
 		args = append(args, "--transitions=lite")
 	}
@@ -780,8 +784,10 @@ func runToCqueryResult(context *Context, pattern string, includeTransitions bool
 		BazelCmdConfig{Dir: context.WorkspacePath, Stdout: &stdout, Stderr: &stderr},
 		[]string{"--output_base", context.BazelOutputBase}, "cquery", args...)
 
-	if returnVal != 0 || err != nil {
-		return nil, fmt.Errorf("failed to run cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+	if returnVal > 1 || err != nil {
+		if err.Error() != "exit status 1" {
+			return nil, fmt.Errorf("failed to run cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+		}
 	}
 
 	content := stdout.Bytes()
@@ -813,9 +819,12 @@ func findCompatibleTargets(context *Context, pattern string, compatibility bool)
 			[]string{"--output_base", context.BazelOutputBase}, "cquery", fmt.Sprintf("%s - kind(alias, %s)", pattern, pattern),
 			"--output=starlark",
 			"--starlark:expr=target.label"+queryFilter,
+			"--keep_going",
 		)
-		if returnVal != 0 || err != nil {
-			return nil, fmt.Errorf("failed to run compatibility-filtering cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+		if returnVal > 1 || err != nil {
+			if err.Error() != "exit status 1" {
+				return nil, fmt.Errorf("failed to run compatibility-filtering cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+			}
 		}
 		if err := addCompatibleTargetsLines(&stdout, compatibleTargets); err != nil {
 			return nil, err
@@ -831,9 +840,12 @@ func findCompatibleTargets(context *Context, pattern string, compatibility bool)
 			"--output=starlark",
 			// Example output of `repr(target)` for an alias target: `<alias target //java/example:example_test of //java/example:OtherExampleTest>`
 			"--starlark:expr=repr(target).split(\" \")[2]"+queryFilter,
+			"--keep_going",
 		)
-		if returnVal != 0 || err != nil {
-			return nil, fmt.Errorf("failed to run alias compatibility-filtering cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+		if returnVal > 1 || err != nil {
+			if err.Error() != "exit status 1" {
+				return nil, fmt.Errorf("failed to run alias compatibility-filtering cquery on %s: %w. Stderr:\n%v", pattern, err, stderr.String())
+			}
 		}
 		if err := addCompatibleTargetsLines(&stdout, compatibleTargets); err != nil {
 			return nil, err
